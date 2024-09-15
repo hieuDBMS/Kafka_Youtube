@@ -1,0 +1,189 @@
+1. Wait for Kafka Connect to be started
+bash -c ' \
+echo -e "\n\n=============\nWaiting for Kafka Connect to start listening on localhost ⏳\n=============\n"
+while [ $(curl -s -o /dev/null -w %{http_code} http://localhost:8083/connectors) -ne 200 ] ; do
+  echo -e "\t" $(date) " Kafka Connect listener HTTP state: " $(curl -s -o /dev/null -w %{http_code} http://localhost:8083/connectors) " (waiting for 200)"
+  sleep 5
+done
+echo -e $(date) "\n\n--------------\n\o/ Kafka Connect is ready! Listener HTTP state: " $(curl -s -o /dev/null -w %{http_code} http://localhost:8083/connectors) "\n--------------\n"
+'
+
+2.  # Check Mysql Debezium and JDBC Connector Source/Sink are available
+curl -s localhost:8083/connector-plugins|jq '.[].class'|egrep 'JdbcSinkConnector|MySqlConnector|JdbcSourceConnector'
+
+    # Check the connector status:
+curl -s "http://localhost:8083/connectors?expand=info&expand=status" | \
+       jq '. | to_entries[] | [ .value.info.type, .key, .value.status.connector.state,.value.status.tasks[].state,.value.info.config."connector.class"]|join(":|:")' | \
+       column -s : -t| sed 's/\"//g'| sort
+    #Show data with kafkacat with no avro encryption
+    docker exec kafkacat kafkacat \
+        -b broker:29092 \
+        -t mysql-debezium-json-with-schema-hieuminh.youtube.Video \
+        -C -o -10 -q | jq
+
+3. Create source connector mySQL with REST API
+    curl -i -X POST -H "Accept:application/json" \
+    -H  "Content-Type:application/json" http://localhost:8083/connectors/ \
+    -d '{
+      "name": "source-debezium-video-01",
+      "config": {
+            "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+            "database.hostname": "mysql",
+            "database.port": "3306",
+            "database.user": "debezium",
+            "database.password": "dbz",
+            "database.server.id": "43",
+            "database.server.name": "hieuminh",
+            "table.whitelist": "youtube.Video",
+            "database.history.kafka.bootstrap.servers": "broker:29092",
+            "database.history.kafka.topic": "dbhistory.demo" ,
+            "decimal.handling.mode": "double",
+            "include.schema.changes": "true",
+            "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "value.converter.schemas.enable": "true",
+            "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "key.converter.schemas.enable": "true",
+            "transforms": "unwrap,addTopicPrefix",
+            "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+            "transforms.addTopicPrefix.type":"org.apache.kafka.connect.transforms.RegexRouter",
+            "transforms.addTopicPrefix.regex":"(.*)",
+            "transforms.addTopicPrefix.replacement":"mysql-debezium-json-with-schema-$1"
+       }
+    }'
+    curl -i -X POST -H "Accept:application/json" \
+    -H  "Content-Type:application/json" http://localhost:8083/connectors/ \
+    -d '{
+      "name": "source-debezium-video-02",
+      "config": {
+            "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+            "database.hostname": "mysql",
+            "database.port": "3306",
+            "database.user": "debezium",
+            "database.password": "dbz",
+            "database.server.id": "44",
+            "database.server.name": "hieuminh2",
+            "table.whitelist": "youtube.Video",
+            "database.history.kafka.bootstrap.servers": "broker:29092",
+            "database.history.kafka.topic": "dbhistory.demo" ,
+            "decimal.handling.mode": "double",
+            "include.schema.changes": "true",
+            "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "value.converter.schemas.enable": "true",
+            "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "key.converter.schemas.enable": "true",
+            "transforms": "unwrap,addTopicPrefix,tsConverter",
+            "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+            "transforms.addTopicPrefix.type":"org.apache.kafka.connect.transforms.RegexRouter",
+            "transforms.addTopicPrefix.regex":"(.*)",
+            "transforms.addTopicPrefix.replacement":"mysql-debezium-json-with-schema-$1",
+            "transforms.tsConverter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+            "transforms.tsConverter.field": "update_at",
+            "transforms.tsConverter.format": "yyyy-MM-dd HH:mm:ss",
+            "transforms.tsConverter.target.type": "string"
+       }
+    }'
+    curl -i -X POST -H "Accept:application/json" \
+    -H  "Content-Type:application/json" http://localhost:8083/connectors/ \
+    -d '{
+      "name": "source-debezium-video-03",
+      "config": {
+            "connector.class": "io.debezium.connector.mysql.MySqlConnector",
+            "database.hostname": "mysql",
+            "database.port": "3306",
+            "database.user": "debezium",
+            "database.password": "dbz",
+            "database.server.id": "45",
+            "database.server.name": "hieuminh3",
+            "table.whitelist": "youtube.Video",
+            "database.history.kafka.bootstrap.servers": "broker:29092",
+            "database.history.kafka.topic": "dbhistory.demo" ,
+            "decimal.handling.mode": "double",
+            "include.schema.changes": "true",
+            "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "value.converter.schemas.enable": "true",
+            "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+            "key.converter.schemas.enable": "true",
+            "transforms": "unwrap,addTopicPrefix,tsConverter",
+            "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+            "transforms.addTopicPrefix.type":"org.apache.kafka.connect.transforms.RegexRouter",
+            "transforms.addTopicPrefix.regex":"(.*)",
+            "transforms.addTopicPrefix.replacement":"mysql-debezium-json-with-schema-$1",
+            "transforms.tsConverter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+            "transforms.tsConverter.field": "update_at",
+            "transforms.tsConverter.unix.precision": "seconds",
+            "transforms.tsConverter.format": "yyyy-MM-dd HH:mm:ss",
+            "transforms.tsConverter.target.type": "string"
+       }
+    }'
+
+
+4. Create sink connector Postgres with REST API
+    curl -X POST http://localhost:8083/connectors -H "Content-Type: application/json" -d '{
+              "name": "sink-jdbc-postgres-video-01",
+              "config": {
+                "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+                "tasks.max": "1",
+                "topics": "mysql-debezium-json-with-schema-hieuminh.youtube.Video",
+                "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "value.converter.schemas.enable": "true",
+                "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "key.converter.schemas.enable": "true",
+                "connection.url": "jdbc:postgresql://192.168.1.6:5433/postgres",
+                "connection.user": "postgres",
+                "connection.password": "26102002",
+                "auto.create": "true",
+                "auto.evolve":"true",
+                "pk.mode":"none",
+                "errors.tolerance": "all",
+                "auto.offset.reset": "earliest",
+                "transforms": "TimestampConverter",
+                "transforms.TimestampConverter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+                "transforms.tsConverter.field": "update_at",
+                "transforms.TimestampConverter.format": "yyyy-MM-dd",
+                "transforms.TimestampConverter.target.type": "string",
+                "table.name.format": "Video"
+                }
+              }'
+
+5. To update a connector, use this
+curl -X PUT http://localhost:8083/connectors/sink-jdbc-postgres-03/config -H "Content-Type: application/json" -d '{
+      "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+      "tasks.max": "1",
+      "topics": "mysql-debezium-json-with-schema-hieuminh.youtube.Video",
+      "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+      "value.converter.schemas.enable": "true",
+      "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+      "key.converter.schemas.enable": "true",
+      "connection.url": "jdbc:postgresql://192.168.1.6:5433/postgres",
+      "connection.user": "postgres",
+      "connection.password": "26102002",
+      "auto.create": "true",
+      "auto.evolve": "true",
+      "pk.mode": "none",
+      "errors.tolerance": "all",
+      "auto.offset.reset": "earliest",
+      "table.name.format": "Video5"
+}'
+    curl -X PUT http://localhost:8083/connectors/sink-jdbc-postgres-video-03/config -H "Content-Type: application/json" -d '{
+                "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+                "tasks.max": "1",
+                "topics": "mysql-debezium-json-with-schema-hieuminh.youtube.Video",
+                "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "value.converter.schemas.enable": "true",
+                "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+                "key.converter.schemas.enable": "true",
+                "connection.url": "jdbc:postgresql://192.168.1.6:5433/postgres",
+                "connection.user": "postgres",
+                "connection.password": "26102002",
+                "auto.create": "true",
+                "auto.evolve":"true",
+                "pk.mode":"none",
+                "errors.tolerance": "all",
+                "auto.offset.reset": "earliest",
+                "transforms": "TimestampConverter",
+                "transforms.TimestampConverter.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+                "transforms.TimestampConverter.field": "update_at",
+                "transforms.TimestampConverter.target.type": "string",
+                "transforms.TimestampConverter.unix.precision": "seconds",
+                "table.name.format": "Video"
+    }'
